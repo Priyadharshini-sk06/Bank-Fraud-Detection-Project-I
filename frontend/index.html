@@ -1,117 +1,61 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bank Fraud Detection</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d18"><title>Sentinel | Bank Fraud Detection</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main class="page">
-    <header class="page-header">
-      <h1>Bank Fraud Detection</h1>
-      <p class="subtitle">Enter a transaction's details to check its fraud risk in real time.</p>
-    </header>
-
-    <section class="card">
-      <form id="transaction-form">
-        <div class="form-grid">
-          <div class="field">
-            <label for="amount">Amount ($)</label>
-            <input type="number" id="amount" name="amount" step="0.01" min="0.01" value="4500.00" required />
-          </div>
-
-          <div class="field">
-            <label for="timestamp">Timestamp</label>
-            <input type="datetime-local" id="timestamp" name="timestamp" required />
-          </div>
-
-          <div class="field">
-            <label for="transaction_type">Transaction Type</label>
-            <select id="transaction_type" name="transaction_type" required>
-              <option value="POS">POS</option>
-              <option value="ONLINE">ONLINE</option>
-              <option value="ATM_WITHDRAWAL">ATM_WITHDRAWAL</option>
-              <option value="WIRE_TRANSFER" selected>WIRE_TRANSFER</option>
-              <option value="BILL_PAYMENT">BILL_PAYMENT</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="merchant_category">Merchant Category</label>
-            <select id="merchant_category" name="merchant_category" required>
-              <option value="grocery">grocery</option>
-              <option value="restaurant">restaurant</option>
-              <option value="fuel">fuel</option>
-              <option value="utilities">utilities</option>
-              <option value="online_retail">online_retail</option>
-              <option value="electronics">electronics</option>
-              <option value="travel">travel</option>
-              <option value="jewelry">jewelry</option>
-              <option value="gambling">gambling</option>
-              <option value="cash_advance" selected>cash_advance</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="country">Country</label>
-            <select id="country" name="country" required>
-              <option value="US">US</option>
-              <option value="GB">GB</option>
-              <option value="IN">IN</option>
-              <option value="DE">DE</option>
-              <option value="FR">FR</option>
-              <option value="CA">CA</option>
-              <option value="AU">AU</option>
-              <option value="BR">BR</option>
-              <option value="NG" selected>NG</option>
-              <option value="RU">RU</option>
-              <option value="CN">CN</option>
-              <option value="UA">UA</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="device_risk_score">Device Risk Score (0-1)</label>
-            <input type="number" id="device_risk_score" name="device_risk_score" step="0.01" min="0" max="1" value="0.82" required />
-          </div>
-
-          <div class="field">
-            <label for="ip_risk_score">IP Risk Score (0-1)</label>
-            <input type="number" id="ip_risk_score" name="ip_risk_score" step="0.01" min="0" max="1" value="0.77" required />
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <label class="api-url-field">
-            API base URL
-            <input type="text" id="api-url" value="http://127.0.0.1:8000" />
-          </label>
-          <button type="submit" id="submit-btn">Check Transaction</button>
-        </div>
-      </form>
-
-      <p id="error-message" class="error-message" hidden></p>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Sentinel home"><span class="brand-logo">S</span><span><b>SENTINEL</b><small>FRAUD INTELLIGENCE</small></span></a>
+    <p class="nav-caption">WORKSPACE</p>
+    <a class="nav-item selected" href="#overview"><span>▦</span> Overview</a>
+    <a class="nav-item" href="#transaction-form"><span>⌁</span> Analyze transaction</a>
+    <a class="nav-item" href="#result-card"><span>◎</span> Risk assessment</a>
+    <div class="sidebar-footer"><div class="local-status"><i></i><span><b>Local model</b><small>Running on this machine</small></span></div><p>Bank Fraud Detection<br><small>ML-powered risk assessment</small></p></div>
+  </aside>
+  <main class="main" id="overview">
+    <header class="topbar"><div><div class="eyebrow">RISK OPERATIONS / OVERVIEW</div><h1>Fraud intelligence</h1></div><div class="top-actions"><span class="api-pill"><i></i><span id="api-status">API connection</span></span><button type="button" class="outline-btn" id="refresh-health">↻ Refresh status</button></div></header>
+    <section class="intro"><div><h2>Transaction risk overview</h2><p>Evaluate transaction signals and understand the factors behind each model decision.</p></div><span class="date-chip" id="today-label">LOCAL SESSION</span></section>
+    <section class="stats">
+      <article class="stat"><div class="stat-label">MODEL STATUS <span class="stat-icon blue">✳</span></div><strong id="model-status">Checking…</strong><small id="model-detail">Connecting to prediction service</small></article>
+      <article class="stat"><div class="stat-label">DECISION THRESHOLD <span class="stat-icon violet">⌁</span></div><strong id="threshold-status">—</strong><small>Fraud classification cutoff</small></article>
+      <article class="stat"><div class="stat-label">LAST ASSESSMENT <span class="stat-icon cyan">◷</span></div><strong id="last-check">Not run yet</strong><small>Current browser session</small></article>
+      <article class="stat"><div class="stat-label">API ENDPOINT <span class="stat-icon green">↗</span></div><strong id="api-detail">127.0.0.1:8000</strong><small>Local development server</small></article>
     </section>
-
-    <section id="result-card" class="card result-card" hidden>
-      <div id="result-banner" class="result-banner">
-        <span id="result-icon" class="result-icon"></span>
-        <div>
-          <div id="result-label" class="result-label"></div>
-          <div id="result-probability" class="result-probability"></div>
+    <section class="work-grid">
+      <article class="panel form-panel"><div class="panel-head"><div><span class="kicker">NEW ASSESSMENT</span><h2>Analyze a transaction</h2><p>Enter the transaction details to assess fraud risk.</p></div><span class="step">01 / INPUT</span></div>
+        <form id="transaction-form">
+          <div class="fields">
+            <div class="field"><label for="amount">Transaction amount <em>USD</em></label><div class="amount-wrap"><span>$</span><input type="number" id="amount" name="amount" step="0.01" min="0.01" value="4500.00" required></div></div>
+            <div class="field"><label for="timestamp">Transaction timestamp</label><input type="datetime-local" id="timestamp" name="timestamp" required></div>
+            <div class="field"><label for="transaction_type">Transaction type</label><select id="transaction_type" name="transaction_type" required><option value="POS">POS</option><option value="ONLINE">ONLINE</option><option value="ATM_WITHDRAWAL">ATM_WITHDRAWAL</option><option value="WIRE_TRANSFER" selected>WIRE_TRANSFER</option><option value="BILL_PAYMENT">BILL_PAYMENT</option></select></div>
+            <div class="field"><label for="merchant_category">Merchant category</label><select id="merchant_category" name="merchant_category" required><option value="grocery">grocery</option><option value="restaurant">restaurant</option><option value="fuel">fuel</option><option value="utilities">utilities</option><option value="online_retail">online_retail</option><option value="electronics">electronics</option><option value="travel">travel</option><option value="jewelry">jewelry</option><option value="gambling">gambling</option><option value="cash_advance" selected>cash_advance</option></select></div>
+            <div class="field"><label for="country">Country code</label><select id="country" name="country" required><option value="US">US</option><option value="GB">GB</option><option value="IN">IN</option><option value="DE">DE</option><option value="FR">FR</option><option value="CA">CA</option><option value="AU">AU</option><option value="BR">BR</option><option value="NG" selected>NG</option><option value="RU">RU</option><option value="CN">CN</option><option value="UA">UA</option></select></div>
+            <div class="field"><label for="device_risk_score">Device risk score <em>0–1</em></label><input type="number" id="device_risk_score" name="device_risk_score" min="0" max="1" step="0.01" value="0.82" required><small>Higher values indicate greater risk.</small></div>
+            <div class="field"><label for="ip_risk_score">IP risk score <em>0–1</em></label><input type="number" id="ip_risk_score" name="ip_risk_score" min="0" max="1" step="0.01" value="0.77" required><small>Higher values indicate greater risk.</small></div>
+          </div>
+          <details class="connection"><summary>Connection settings</summary><div class="field api-field"><label for="api-url">API base URL</label><input type="url" id="api-url" value="http://127.0.0.1:8000" required></div></details>
+          <p id="error-message" class="error-message" hidden></p>
+          <button type="submit" id="submit-btn" class="primary-btn"><span>Run fraud assessment</span><span>→</span></button>
+          <p class="privacy-note">⌑ &nbsp;Demo environment · Use synthetic transaction data only.</p>
+        </form>
+      </article>
+      <article class="panel result-panel" id="result-card" aria-live="polite"><div class="panel-head"><div><span class="kicker">MODEL OUTPUT</span><h2>Risk assessment</h2><p>Prediction and model explanation.</p></div><span class="step">02 / RESULT</span></div>
+        <div id="empty-state" class="empty-state"><div class="radar"><span>◎</span></div><h3>Ready for assessment</h3><p>Submit transaction details to see the predicted risk level and the model's strongest contributing signals.</p><div class="skeleton"><i></i><i></i><i></i></div></div>
+        <div id="result-content" hidden>
+          <div id="result-banner" class="result-banner"><div id="result-icon" class="result-symbol">!</div><div class="result-copy"><span class="kicker">PREDICTION</span><h3 id="result-label">Prediction</h3><p id="result-probability">Fraud probability: —</p></div><span id="result-tag" class="result-tag">RESULT</span></div>
+          <div class="probability"><div class="prob-head"><span>Fraud probability</span><b id="probability-number">—</b></div><div class="progress-track"><div id="probability-bar" class="progress-fill"></div></div><div class="scale"><span>0% · Lower</span><span>Higher · 100%</span></div></div>
+          <div class="result-meta"><div><small>Decision threshold</small><b id="result-threshold">—</b></div><div><small>Assessment time</small><b id="result-time">—</b></div></div>
+          <div class="factors-head"><div><h3>Contributing factors</h3><p>SHAP-based explanation from the model</p></div><span id="factor-count" class="factor-count">0 signals</span></div>
+          <ul id="features-list" class="features-list"></ul>
+          <p class="disclaimer">This prediction is decision support, not proof of fraud. Review flagged transactions using your organization's procedures.</p>
         </div>
-      </div>
-
-      <div class="result-detail">
-        <span>Decision threshold used: <strong id="result-threshold"></strong></span>
-      </div>
-
-      <h2 class="features-heading">Top Contributing Factors</h2>
-      <ul id="features-list" class="features-list"></ul>
+      </article>
     </section>
+    <footer><span>Sentinel · Bank Fraud Detection</span><span>Machine-learning demonstration · Not for production banking decisions</span></footer>
   </main>
-
-  <script src="script.js"></script>
-</body>
-</html>
+</div>
+<script src="/script.js"></script>
+</body></html>
