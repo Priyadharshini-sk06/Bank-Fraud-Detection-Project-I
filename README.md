@@ -324,3 +324,10 @@ locally, per the assignment.
   Optuna objective is recall-at-fixed-FPR rather than PR-AUC, why the
   decision threshold isn't 0.5) is explained in a comment at the point
   of the decision.
+
+## Local configuration and privacy notes
+
+- The inspected application uses the local CSV dataset (`data/transactions.csv`) and serialized model files under `models/`; no MySQL, PostgreSQL, or MongoDB connection is configured in the application code.
+- The frontend API base URL defaults to `http://127.0.0.1:8000`. This is a local development endpoint, not a database credential.
+- Never commit real customer transactions, passwords, API keys, or `.env` files. Confirm the bundled dataset is synthetic before sharing it publicly.
+- This is a demonstration and must not be used as the sole basis for real banking decisions.
