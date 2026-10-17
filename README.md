@@ -1,333 +1,363 @@
-# Bank Fraud Detection using Machine Learning
+# Bank Fraud Detection System
 
-Video Link:https://drive.google.com/file/d/1SrIhFh_yuT3NiFRKTzWyMxARSlVpOwoA/view?usp=sharing
-An end-to-end fraud detection system: synthetic transaction data generation, EDA,
-an XGBoost model tuned with Optuna and explained with SHAP, a FastAPI backend, and
-a minimal HTML/CSS/JS frontend that calls it.
+An end-to-end machine learning application that predicts potentially fraudulent bank transactions using **XGBoost**, handles class imbalance with **SMOTE**, and explains individual predictions using **SHAP**. The project includes a FastAPI backend, an interactive web frontend, model evaluation visualizations, and a configurable fraud-detection threshold.
 
----
+## Project Overview
 
-## 1. Problem Statement
+Bank fraud detection is challenging because fraudulent transactions typically represent only a small fraction of all transactions. A model that predicts every transaction as legitimate could achieve high accuracy while failing to identify actual fraud.
 
-Banks need to flag fraudulent transactions in real time while minimizing
-disruption to legitimate customers. This is a classic **imbalanced binary
-classification** problem: fraud is rare (real-world rates are typically
-well under 1%), so a naive model that predicts "not fraud" for everything
-would already be >98% "accurate" while catching zero fraud. The real
-objective is a cost-sensitive one:
+This project addresses that challenge by combining machine learning, imbalanced-data handling, threshold optimization, and explainable AI.
 
-- **Catch as much fraud as possible** (high recall on the fraud class)
-- **Without overwhelming fraud analysts / blocking too many legitimate
-  customers** (low false-positive rate)
+The system accepts transaction details, estimates the probability of fraud, classifies the transaction using a configurable decision threshold, and identifies the features that contribute most to the prediction.
 
-This project targets **fraud recall > 80% at a false-positive rate < 5%**.
+## Key Features
 
-> **Note on the dataset:** No Kaggle dataset was provided, so a synthetic
-> transaction dataset was generated (see [Approach](#2-approach) below).
-> This was a deliberate design choice for this project, documented in
-> `scripts/generate_data.py`; swapping in a real dataset (e.g. the IEEE-CIS
-> or Kaggle "Credit Card Fraud" datasets) would only require changing
-> `data/transactions.csv` and the column names in `src/data_prep.py`.
+- **Fraud probability prediction:** Estimates the likelihood that a transaction is fraudulent.
+- **XGBoost classification:** Uses a gradient-boosted tree model for fraud detection.
+- **SMOTE:** Addresses class imbalance during model training.
+- **Optuna hyperparameter tuning:** Searches for model and sampling parameters using stratified cross-validation.
+- **Decision-threshold optimization:** Targets fraud recall of at least 80% while keeping the false-positive rate at or below 5%.
+- **SHAP explainability:** Identifies the strongest contributors to individual fraud predictions and calculates global feature importance.
+- **Interactive web interface:** Provides a frontend for submitting transaction details and viewing predictions.
+- **FastAPI backend:** Exposes prediction and health-check endpoints.
+- **Evaluation visualizations:** Includes a confusion matrix, ROC curve, SHAP feature importance, and exploratory data analysis plots.
 
----
+> The recall and false-positive-rate values above are optimization targets, not guaranteed results. Actual performance is recorded in `models/metadata.json`.
 
-## 2. Approach
+## Tech Stack
 
-### 2.1 Data (`scripts/generate_data.py`)
-Generates 50,000 synthetic transactions with a **probabilistic** (not
-hard-coded if/else) fraud label:
-- Features: `amount`, `timestamp`, `transaction_type`, `merchant_category`,
-  `country`, `device_risk_score`, `ip_risk_score`
-- Each transaction's fraud probability is computed as a **logistic function**
-  of weighted risk signals (large amount, risky transaction types like wire
-  transfers, risky merchant categories like gambling/cash-advance, high-risk
-  countries, late-night activity, high device/IP risk scores) plus random
-  noise, then a Bernoulli label is sampled from that probability. This
-  produces a realistic, imperfectly-separable classification problem rather
-  than a trivially deterministic one.
-- Final fraud rate: **~1.6%** of transactions.
+| Component | Technologies |
+|---|---|
+| Language | Python |
+| Data processing | Pandas, NumPy, SciPy |
+| Machine learning | Scikit-learn, XGBoost |
+| Imbalanced data | imbalanced-learn, SMOTE |
+| Hyperparameter tuning | Optuna |
+| Explainable AI | SHAP |
+| Data visualization | Matplotlib, Seaborn |
+| Backend API | FastAPI, Uvicorn, Pydantic |
+| Model persistence | Joblib |
+| Frontend | HTML5, CSS3, JavaScript |
 
-### 2.2 EDA (`scripts/eda.py`)
-Class imbalance check, amount distribution by class, and a feature
-correlation heatmap. Plots saved to `outputs/`. Key finding: linear
-correlations with `is_fraud` are individually weak (as expected for a
-logistic-combination signal), but fraud *rates* vary sharply across
-categories -- e.g. `gambling`/`cash_advance` merchants and `WIRE_TRANSFER`
-transactions have several times the base fraud rate -- which is exactly the
-kind of non-linear, interaction-heavy signal tree ensembles like XGBoost
-are good at exploiting.
+## System Architecture
 
-### 2.3 Modeling (`src/data_prep.py`, `src/model.py`, `scripts/train.py`)
-1. **Feature engineering**: `hour`, `day_of_week`, `is_night` derived from
-   `timestamp`; categoricals one-hot encoded.
-2. **Stratified train/test split** (80/20) so the rare fraud class is
-   represented proportionally in both sets.
-3. **Baseline model**: Logistic Regression trained on SMOTE-resampled data.
-4. **Main model**: XGBoost, tuned with **Optuna** (30 trials, 3-fold
-   cross-validation). Both the SMOTE oversampling ratio and the XGBoost
-   hyperparameters (`max_depth`, `learning_rate`, `subsample`,
-   `colsample_bytree`, `min_child_weight`, `gamma`, `reg_alpha`,
-   `reg_lambda`, `n_estimators`) are tuned jointly. The tuning objective is
-   **recall at a fixed 5% false-positive rate** -- i.e. we optimize
-   directly for the metric the business cares about, not a threshold-agnostic
-   proxy like ROC-AUC.
-   - *Why tune the SMOTE ratio instead of using its 1:1 default?* With only
-     ~1.6% fraud, default SMOTE generates ~60x synthetic minority samples.
-     In this dataset's ~30-dimensional, mostly one-hot feature space, that
-     much synthetic oversampling created noisy near-duplicate points that
-     blurred the true decision boundary and *hurt* the low-FPR operating
-     point. Tuning the ratio (found optimum: ~16% of majority class size)
-     fixed this.
-5. **Cost-sensitive threshold optimization**: rather than the default 0.5
-   cutoff, we scan thresholds and pick the one that satisfies
-   recall > 80% and FPR < 5% (see `optimize_threshold` in `src/model.py`).
-6. **SHAP explainability**: `shap.TreeExplainer` on the final XGBoost model
-   gives both global feature importance (`outputs/shap_global_importance.png`)
-   and a per-transaction local explanation (also exposed live via the API).
-
-### 2.4 Backend (`app/main.py`)
-FastAPI service that loads the trained model **once at startup**, validates
-input with Pydantic, and serves `/predict` and `/health`. CORS is enabled
-so the static frontend can call it from a different origin/port.
-
-### 2.5 Frontend (`frontend/`)
-Plain HTML/CSS/JS (no frameworks, no build step). A form posts to
-`/predict` and renders the fraud probability, a red/green flag, and the
-top SHAP-driving features for that specific transaction.
-
----
-
-## 3. Model Performance Achieved
-
-Evaluated on a held-out test set (10,000 transactions, 164 fraud, never
-seen during training or hyperparameter tuning):
-
-| Model | Threshold | Recall | Precision | False Positive Rate | ROC-AUC | PR-AUC |
-|---|---|---|---|---|---|---|
-| Baseline (Logistic Regression + SMOTE) | 0.5 (default) | 91.5% | 17.2% | 7.4% | 0.976 | 0.622 |
-| **XGBoost (tuned) -- default threshold** | 0.5 (default) | 37.2% | 67.8% | 0.3% | 0.974 | 0.579 |
-| **XGBoost (tuned) -- optimized threshold** | **0.125** | **82.9%** | **35.5%** | **2.5%** | 0.974 | 0.579 |
-
-**Targets: recall > 80%, FPR < 5% -- both met** (82.9% recall at 2.5% FPR).
-
-Confusion matrix at the optimized threshold (0.125):
-
-| | Predicted Legit | Predicted Fraud |
-|---|---|---|
-| **Actual Legit** | 9,589 | 247 |
-| **Actual Fraud** | 28 | 136 |
-
-This illustrates why the default 0.5 threshold is the wrong choice for a
-rare-event problem: at 0.5, XGBoost is "confident" and precise (67.8%
-precision) but only catches 37% of fraud. Lowering the threshold to 0.125
-trades some precision for a large recall gain -- exactly the trade-off a
-fraud team would choose, since missing fraud is typically far costlier
-than a false alarm that a human reviewer clears in seconds.
-
-Plots: `outputs/class_imbalance.png`, `outputs/amount_distribution.png`,
-`outputs/correlation_heatmap.png`, `outputs/confusion_matrix.png`,
-`outputs/roc_curve.png`, `outputs/shap_global_importance.png`.
-
-**Top global SHAP features**: `ip_risk_score`, `device_risk_score`,
-`transaction_type_WIRE_TRANSFER`, `is_night`, `transaction_type_ONLINE` --
-consistent with the fraud-generating logic and with the EDA findings.
-
----
-
-## 4. Project Structure
-
+```mermaid
+flowchart TD
+    A[Transaction Input] --> B[Web Frontend]
+    B --> C[FastAPI Backend]
+    C --> D[Feature Engineering]
+    D --> E[Saved Preprocessor]
+    E --> F[Trained XGBoost Pipeline]
+    F --> G[Fraud Probability]
+    F --> H[SHAP Explanation]
+    G --> I[Decision Threshold]
+    I --> J[Fraud Prediction]
+    H --> K[Top Contributing Features]
+    J --> L[API Response]
+    K --> L
+    L --> B
 ```
-bank-fraud-detection/
-├── data/
-│   └── transactions.csv          # generated synthetic dataset
-├── scripts/
-│   ├── generate_data.py          # Step 1: synthetic data generation
-│   ├── eda.py                    # Step 2: exploratory data analysis
-│   └── train.py                  # Step 3: full training pipeline
-├── src/
-│   ├── data_prep.py              # feature engineering + preprocessing (shared)
-│   └── model.py                  # training / tuning / eval / SHAP (shared)
+
+### How It Works
+
+1. The user enters transaction details through the web interface.
+2. The frontend sends the transaction to the FastAPI prediction endpoint.
+3. The backend derives time-based features from the transaction timestamp.
+4. The saved preprocessor encodes categorical variables and prepares the input.
+5. The trained XGBoost pipeline calculates the fraud probability.
+6. The probability is compared with the selected threshold to determine the fraud flag.
+7. SHAP identifies the top contributing features for that transaction.
+8. The API returns the probability, fraud flag, threshold, and explanations.
+
+## Project Structure
+
+```text
+Project1_Bank_Fraud_Detection/
+│
 ├── app/
-│   └── main.py                   # Step 4: FastAPI backend
+│   ├── __init__.py
+│   └── main.py
+│
+├── data/
+│   └── transactions.csv
+│
 ├── frontend/
-│   ├── index.html                # Step 5: minimal frontend
-│   ├── style.css
-│   └── script.js
-├── models/                       # saved model artifacts (generated by train.py)
+│   ├── index.html
+│   ├── script.js
+│   └── style.css
+│
+├── models/
+│   ├── metadata.json
 │   ├── preprocessor.joblib
-│   ├── xgb_pipeline.joblib
-│   └── metadata.json             # threshold, feature names, metrics, SHAP summary
-├── outputs/                      # EDA + evaluation plots (generated)
+│   └── xgb_pipeline.joblib
+│
+├── outputs/
+│   ├── amount_distribution.png
+│   ├── class_imbalance.png
+│   ├── confusion_matrix.png
+│   ├── correlation_heatmap.png
+│   ├── roc_curve.png
+│   └── shap_global_importance.png
+│
+├── scripts/
+│   ├── eda.py
+│   ├── generate_data.py
+│   └── train.py
+│
+├── src/
+│   ├── __init__.py
+│   ├── data_prep.py
+│   └── model.py
+│
+├── Bank_Fraud_Detection_Rec.mp4
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
----
+## Installation and Setup
 
-## 5. How to Run Locally
+### Prerequisites
 
-### 5.1 Setup
+- Python 3.10 or a compatible version supported by the listed dependencies
+- Git
+- pip
+
+### 1. Clone the repository
+
 ```bash
-cd bank-fraud-detection
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
+git clone YOUR_GITHUB_REPOSITORY_URL
+cd Project1_Bank_Fraud_Detection
+```
 
+Replace `YOUR_GITHUB_REPOSITORY_URL` with the actual repository URL. Adjust the directory name if your cloned folder has a different name.
+
+### 2. Create a virtual environment
+
+**Windows PowerShell:**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, you can use the appropriate execution policy for your environment or activate the environment through your IDE.
+
+### 3. Install dependencies
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
-> Tested with **Python 3.11**. (On Windows, avoid Python 3.13+/3.14 for now --
-> some pinned packages here don't yet ship prebuilt wheels for the newest
-> Python versions.)
 
-### 5.2 Train the model
+### 4. Verify model artifacts
+
+The API loads the saved preprocessing and model artifacts during startup. Ensure these files exist:
+
+```text
+models/preprocessor.joblib
+models/xgb_pipeline.joblib
+models/metadata.json
+```
+
+If they are missing, train the model using the next step.
+
+### 5. Train the model (if required)
+
+Run this command from the project root:
+
 ```bash
-python scripts/generate_data.py   # -> data/transactions.csv
-python scripts/eda.py             # -> outputs/*.png (optional, informational)
-python scripts/train.py           # -> models/*.joblib, models/metadata.json
+python scripts/train.py
 ```
-`train.py` takes a few minutes (Optuna runs 30 hyperparameter-search trials).
-It prints baseline metrics, best hyperparameters, final test-set metrics at
-both the default and optimized thresholds, and the SHAP summary.
 
-### 5.3 Serve the backend
+The training pipeline performs feature engineering, preprocessing, baseline training, Optuna-based XGBoost tuning, evaluation, threshold optimization, SHAP analysis, visualization generation, and model-artifact saving.
+
+**Note:** Training can take time because hyperparameter tuning uses 30 Optuna trials with three-fold stratified cross-validation. Existing model artifacts may be overwritten.
+
+## Run the Application
+
+Start the FastAPI server from the project root:
+
 ```bash
-uvicorn app.main:app --reload --port 8000
-```
-- `GET  http://127.0.0.1:8000/health` -- health check
-- `POST http://127.0.0.1:8000/predict` -- fraud prediction
-- Interactive API docs: `http://127.0.0.1:8000/docs`
-
-### 5.4 Run the frontend
-The FastAPI app already serves the frontend at `http://127.0.0.1:8000/`
-(mounted via `StaticFiles`), so **no extra step is needed** -- just open
-that URL in a browser once the backend is running.
-
-Alternatively, serve it standalone on its own port (useful if you want the
-frontend and backend on genuinely different origins to exercise CORS):
-```bash
-cd frontend
-python -m http.server 5500
-# open http://127.0.0.1:5500 and set "API base URL" in the form to
-# http://127.0.0.1:8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
----
+Open the following URLs:
 
-## 6. API Usage Examples
+| URL | Purpose |
+|---|---|
+| `http://127.0.0.1:8000/` | Web frontend |
+| `http://127.0.0.1:8000/docs` | Interactive API documentation |
+| `http://127.0.0.1:8000/health` | API and model health status |
 
-### Health check
-```bash
-curl http://127.0.0.1:8000/health
-```
-```json
-{"status":"ok","model_loaded":true,"threshold":0.125,"trained_at":"2026-09-08 22:53:03"}
-```
+The frontend is mounted by FastAPI when the `frontend` directory exists.
 
-### Predict -- high-risk transaction
-```bash
-curl -X POST http://127.0.0.1:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 4500.00,
-    "timestamp": "2025-07-15T02:30:00",
-    "transaction_type": "WIRE_TRANSFER",
-    "merchant_category": "cash_advance",
-    "country": "NG",
-    "device_risk_score": 0.82,
-    "ip_risk_score": 0.77
-  }'
-```
+### Health Check
+
+Send a GET request to `/health`. The response reports the API status, whether the model artifacts loaded successfully, the configured threshold, and the training timestamp when available.
+
+## 🔌 API Documentation
+
+### `POST /predict`
+
+Accepts transaction details and returns the predicted fraud probability, fraud flag, threshold used, and top contributing features.
+
+#### Example request
+
 ```json
 {
-  "fraud_probability": 0.999333,
+  "amount": 4500.00,
+  "timestamp": "2025-07-15T02:30:00",
+  "transaction_type": "WIRE_TRANSFER",
+  "merchant_category": "cash_advance",
+  "country": "NG",
+  "device_risk_score": 0.82,
+  "ip_risk_score": 0.77
+}
+```
+
+The categorical values must belong to the allowed lists defined in `src/data_prep.py`. The timestamp must be a valid datetime string, and the amount must be greater than zero. Device and IP risk scores must be between 0 and 1.
+
+#### Example response structure
+
+```json
+{
+  "fraud_probability": 0.91,
   "fraud_flag": true,
-  "threshold_used": 0.125,
+  "threshold_used": 0.5,
   "top_contributing_features": [
-    {"feature": "ip_risk_score", "value": 0.77, "shap_value": 2.96, "direction": "increases_fraud_risk"},
-    {"feature": "device_risk_score", "value": 0.82, "shap_value": 2.49, "direction": "increases_fraud_risk"},
-    {"feature": "merchant_category_cash_advance", "value": 1.0, "shap_value": 1.22, "direction": "increases_fraud_risk"},
-    {"feature": "transaction_type_WIRE_TRANSFER", "value": 1.0, "shap_value": 0.97, "direction": "increases_fraud_risk"},
-    {"feature": "country_NG", "value": 1.0, "shap_value": 0.82, "direction": "increases_fraud_risk"}
+    {
+      "feature": "device_risk_score",
+      "value": 0.82,
+      "shap_value": 0.31,
+      "direction": "increases_fraud_risk"
+    }
   ]
 }
 ```
 
-### Predict -- low-risk transaction
-```bash
-curl -X POST http://127.0.0.1:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 42.50,
-    "timestamp": "2025-07-15T14:20:00",
-    "transaction_type": "POS",
-    "merchant_category": "grocery",
-    "country": "US",
-    "device_risk_score": 0.05,
-    "ip_risk_score": 0.03
-  }'
+**Illustrative response only:** the probability, threshold, feature names, and SHAP values above are examples, not measured output from the trained model. The real response may contain up to five contributing features.
+
+## Machine Learning Workflow
+
+### 1. Data preparation and feature engineering
+
+The system uses `data/transactions.csv` and derives additional features from each transaction's timestamp:
+
+- `hour`: hour of the transaction.
+- `day_of_week`: day of the week represented numerically.
+- `is_night`: indicator for transactions occurring between midnight and 5 AM, inclusive.
+
+The data is split into training and testing sets using stratification to preserve the fraud-class proportion.
+
+### 2. Preprocessing
+
+A Scikit-learn `ColumnTransformer` handles categorical and numerical features.
+
+- Categorical features are one-hot encoded.
+- Numerical features pass through without scaling.
+- Unknown categorical values are handled by the encoder without causing inference to fail.
+
+The same saved preprocessor is used during inference to keep the feature transformation consistent.
+
+### 3. Baseline model
+
+A Logistic Regression classifier with SMOTE provides a baseline for comparison.
+
+### 4. XGBoost and hyperparameter tuning
+
+Optuna searches XGBoost hyperparameters and the SMOTE sampling strategy using stratified cross-validation. The tuning objective is recall at a false-positive-rate cap of 5%, aligning model selection with the intended fraud-detection operating point.
+
+### 5. Threshold optimization
+
+Instead of relying exclusively on the default 0.5 threshold, the training workflow searches a range of thresholds to find a suitable balance between catching fraud and avoiding false alarms.
+
+The configured targets are:
+
+- Minimum fraud recall: 80%.
+- Maximum false-positive rate: 5%.
+
+If no threshold meets both constraints, the implementation falls back to the best available recall under the false-positive-rate cap when possible. The actual outcome is recorded in the metadata.
+
+### 6. Explainable AI with SHAP
+
+SHAP is used to explain model predictions at two levels:
+
+- **Global explanation:** ranks features by their mean absolute SHAP values across a sample of test transactions.
+- **Local explanation:** identifies the strongest feature contributions for an individual transaction.
+
+Positive SHAP contributions push the prediction toward fraud, while negative contributions push it toward a legitimate transaction.
+
+## Model Evaluation
+
+The training script evaluates the baseline and XGBoost models using:
+
+| Metric | What it measures |
+|---|---|
+| Recall | Proportion of actual fraudulent transactions correctly identified |
+| Precision | Proportion of transactions flagged as fraud that are actually fraudulent |
+| False-positive rate | Proportion of legitimate transactions incorrectly flagged |
+| ROC-AUC | Ability to distinguish fraud from legitimate transactions across thresholds |
+| PR-AUC | Precision-recall performance, particularly useful for imbalanced data |
+| Confusion matrix | Counts of true positives, false positives, true negatives, and false negatives |
+
+The project stores baseline metrics, default-threshold XGBoost metrics, optimized-threshold metrics, threshold settings, and SHAP importance data in `models/metadata.json`.
+
+To inspect the recorded results:
+
+```powershell
+Get-Content models/metadata.json
 ```
-```json
-{"fraud_probability": 0.000015, "fraud_flag": false, "threshold_used": 0.125, "top_contributing_features": [...]}
-```
 
-Both examples above were run against the live server as part of building
-this project -- see the console output in the development session for the
-exact responses.
+Only report the values recorded in that file as the model's actual results. In particular, check `targets_met` before claiming that the configured recall and false-positive-rate targets were achieved.
 
----
+## Visualizations
 
-## 7. What a Real Deployment Would Add
+The `outputs/` directory contains the following generated visualizations:
 
-This project is a local, self-contained demo. A production deployment on
-AWS would conceptually add:
+| File | Purpose |
+|---|---|
+| `amount_distribution.png` | Explores the distribution of transaction amounts |
+| `class_imbalance.png` | Shows the distribution of legitimate and fraudulent transactions |
+| `correlation_heatmap.png` | Examines relationships between numerical features |
+| `confusion_matrix.png` | Shows classification outcomes at the optimized threshold |
+| `roc_curve.png` | Visualizes the ROC curve for the XGBoost model |
+| `shap_global_importance.png` | Ranks features by global SHAP importance |
 
-- **Compute**: containerize the FastAPI app (Docker) and run it on
-  **AWS ECS/Fargate** or **EC2** behind an Application Load Balancer for
-  steady traffic; or **AWS Lambda** (via API Gateway + a container-image
-  Lambda) for spiky/low-volume traffic, since inference here is a single
-  fast XGBoost + SHAP call per request.
-- **Storage**: model artifacts (`preprocessor.joblib`, `xgb_pipeline.joblib`,
-  `metadata.json`) would live in **S3**, loaded at container/Lambda cold
-  start instead of from local disk, with versioned model artifacts for
-  safe rollback.
-- **Data pipeline**: replace the synthetic generator with a real ingestion
-  pipeline (e.g. transactions streamed via **Kinesis**, batch-scored or
-  retrained via **Step Functions** / **SageMaker Pipelines** on a schedule).
-- **Monitoring**: track live fraud-recall/FPR against the offline
-  evaluation (data drift and model-performance drift), log predictions to
-  **CloudWatch** and a **feature store**, and alert if the served
-  threshold stops meeting the recall/FPR targets on live traffic.
-- **Security**: the current `allow_origins=["*"]` CORS policy is fine for
-  local development only -- production would restrict it to the actual
-  frontend domain, add authentication (API keys / IAM), and put the API
-  behind a WAF.
-- **Retraining**: a scheduled retraining job (new data -> `train.py`
-  equivalent -> new artifacts in S3 -> blue/green model swap) so the model
-  adapts as fraud patterns evolve.
+These plots help examine data patterns, evaluate classification behavior, and understand the model's decisions.
 
-None of this was deployed for this project -- it's scoped to run entirely
-locally, per the assignment.
+## Project Demo
 
----
+Watch the recorded application demonstration:
 
-## 8. Notes on Modularity
+[View Bank Fraud Detection Demo](./Bank_Fraud_Detection_Rec.mp4)
 
-- `src/data_prep.py` and `src/model.py` are imported by **both**
-  `scripts/train.py` and `app/main.py`, so feature engineering and
-  preprocessing are guaranteed identical between training and serving
-  (a common source of subtle bugs when the two are duplicated).
-- All hyperparameters, thresholds, and file paths are named constants at
-  the top of each script -- no magic numbers buried in logic.
-- Every non-obvious modeling decision (why SMOTE ratio is tuned, why the
-  Optuna objective is recall-at-fixed-FPR rather than PR-AUC, why the
-  decision threshold isn't 0.5) is explained in a comment at the point
-  of the decision.
+The video is included in the repository. If GitHub cannot preview it directly, download the video or open it locally.
 
-## Local configuration and privacy notes
+## Limitations and Responsible Use
 
-- The inspected application uses the local CSV dataset (`data/transactions.csv`) and serialized model files under `models/`; no MySQL, PostgreSQL, or MongoDB connection is configured in the application code.
-- The frontend API base URL defaults to `http://127.0.0.1:8000`. This is a local development endpoint, not a database credential.
-- Never commit real customer transactions, passwords, API keys, or `.env` files. Confirm the bundled dataset is synthetic before sharing it publicly.
-- This is a demonstration and must not be used as the sole basis for real banking decisions.
+- This project is an educational machine learning prototype, not a production banking security system.
+- Prediction quality depends on the representativeness and quality of the training data.
+- Fraud predictions are probabilistic and can produce both false positives and false negatives.
+- SHAP explanations describe model contributions; they do not establish that a transaction is definitively fraudulent.
+- The configured evaluation targets must be verified against the saved test-set results.
+- The API currently enables permissive CORS settings for local development. Production deployment would require suitable access controls, authentication, monitoring, and a restrictive CORS policy.
+- The example dataset and results should not be treated as evidence of performance on real banking transactions.
+
+## Future Improvements
+
+- Evaluate performance on larger, independently sourced datasets.
+- Add transaction monitoring and alerting workflows.
+- Introduce authentication, authorization, and audit logging.
+- Add model drift monitoring and periodic retraining.
+- Improve API testing, validation, and deployment automation.
+- Evaluate performance across transaction types and other relevant subgroups.
+
+## Author
+
+**Priyadharshini S K**
+
+B.Tech — Information Technology
+
+[GitHub Profile](https://github.com/Priyadharshini-sk06)
+
